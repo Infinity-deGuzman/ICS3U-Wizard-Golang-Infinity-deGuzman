@@ -8,19 +8,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type Styles struct {
+	BorderColor lipgloss.Color
+	InputField   lipgloss.Style
+}
+
+func DefaultStyles() *Styles {
+	s := new(Styles)
+	s.BorderColor = lipgloss.Color("#E7E7E7")
+	s.InputField = lipgloss.NewStyle().BorderForeground(s.BorderColor).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(80)
+	return s
+}
+
 type model struct {
 	index 		int
 	questions 	[]string
 	width 		int
 	height 		int
 	answerField textinput.Model
+	styles 		*Styles
 }
 
 func New(questions []string) *model {
+	styles := DefaultStyles()
 	answerField := textinput.New()
+	answerField.Placeholder = "type your answer here"
 	return &model{
-		questions: questions,
-		answerField: answerField,
+		questions: 		questions,
+		answerField: 	answerField,
+		styles: 		styles,
 	}
 }
 
@@ -49,7 +65,7 @@ func (m model) View() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Center,
 		m.questions[m.index],
-		m.answerField.View(),
+		m.styles.InputField.Render(m.answerField.View()),
 	)
 }
 
