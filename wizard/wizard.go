@@ -22,14 +22,25 @@ func DefaultStyles() *Styles {
 
 type model struct {
 	index 		int
-	questions 	[]string
+	questions 	[]Question
 	width 		int
 	height 		int
 	answerField textinput.Model
 	styles 		*Styles
 }
 
-func New(questions []string) *model {
+type Question struct {
+	question string
+	answer   string
+}
+
+func NewQuestion(question string) Question {
+	return Question{
+		question: question,
+	}
+}
+
+func New(questions []Question) *model {
 	styles := DefaultStyles()
 	answerField := textinput.New()
 	answerField.Placeholder = "type your answer here"
@@ -47,6 +58,7 @@ func (mod model) Init() tea.Cmd {
 
 func (mod model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	current := &mod.questions[mod.index]
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		mod.width = msg.Width
@@ -56,8 +68,13 @@ func (mod model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return mod, tea.Quit
 		case "enter":
-			mod.index++
-			mod.answerField.SetValue("done!")
+			current.answer = mod.answerField.Value()
+			mod.answerField.SetValue("")
+			log.Printf("question: %s, answer: %s",
+				current.question,
+				current.answer,
+			)
+			mod.Next()
 			return mod, nil
 		}
 	}
@@ -76,17 +93,25 @@ func (mod model) View() string {
 		lipgloss.Center,
 		lipgloss.JoinVertical(
 			lipgloss.Center,
-			mod.questions[mod.index],
+			mod.questions[mod.index].question,
 			mod.styles.InputField.Render(mod.answerField.View()),
 		),
 	)
 }
 
+func (mod *model) Next() {
+	if mod.index < len(mod.questions)-1 {
+		mod.index++
+	} else {
+		mod.index = 0
+	}
+}
+
 func main() {
-	questions := []string{
-		"what is your name?",
-		"what is your favourite editor?",
-		"what is your favourite quote?",
+	questions := []Question{
+		NewQuestion("what is your name?"),
+		NewQuestion("what is your favourite editor?"),
+		NewQuestion("what is your favourite quote?"),
 	}
 	m := New(questions)
 
