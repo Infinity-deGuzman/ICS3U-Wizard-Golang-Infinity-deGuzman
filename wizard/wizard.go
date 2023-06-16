@@ -14,10 +14,10 @@ type Styles struct {
 }
 
 func DefaultStyles() *Styles {
-	s := new(Styles)
-	s.BorderColor = lipgloss.Color("#E7E7E7")
-	s.InputField = lipgloss.NewStyle().BorderForeground(s.BorderColor).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(80)
-	return s
+	stl := new(Styles)
+	stl.BorderColor = lipgloss.Color("#E7E7E7")
+	stl.InputField = lipgloss.NewStyle().BorderForeground(stl.BorderColor).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(80)
+	return stl
 }
 
 type model struct {
@@ -33,6 +33,7 @@ func New(questions []string) *model {
 	styles := DefaultStyles()
 	answerField := textinput.New()
 	answerField.Placeholder = "type your answer here"
+	answerField.Focus()
 	return &model{
 		questions: 		questions,
 		answerField: 	answerField,
@@ -40,32 +41,44 @@ func New(questions []string) *model {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (mod model) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (mod model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		mod.width = msg.Width
+		mod.height = msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, tea.Quit
+			return mod, tea.Quit
+		case "enter":
+			mod.index++
+			mod.answerField.SetValue("done!")
+			return mod, nil
 		}
 	}
-	return m, nil
+	mod.answerField, cmd = mod.answerField.Update(msg)
+	return mod, cmd
 }
 
-func (m model) View() string {
-	if m.width == 0 {
+func (mod model) View() string {
+	if mod.width == 0 {
 		return "loading..."
 	}
-	return lipgloss.JoinVertical(
+	return lipgloss.Place(
+		mod.width,
+		mod.height,
 		lipgloss.Center,
-		m.questions[m.index],
-		m.styles.InputField.Render(m.answerField.View()),
+		lipgloss.Center,
+		lipgloss.JoinVertical(
+			lipgloss.Center,
+			mod.questions[mod.index],
+			mod.styles.InputField.Render(mod.answerField.View()),
+		),
 	)
 }
 
@@ -77,13 +90,13 @@ func main() {
 	}
 	m := New(questions)
 
-	f, err := tea.LogToFile("debug.log", "debug")
+	fail, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
 		log.Fatalf("err: %w", err)
 	}
-	defer f.Close()
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	defer fail.Close()
+	play := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := play.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
