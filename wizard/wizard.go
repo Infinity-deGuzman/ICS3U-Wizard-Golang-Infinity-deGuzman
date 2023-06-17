@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -134,10 +135,11 @@ func main() {
 
 	fail, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
-		log.Fatalf("err: %w", err)
+		fmt.Println("fatal: ", err)
+		os.Exit(1)
 	}
 	defer fail.Close()
-	play := tea.NewProgram(main, tea.WithAltScreen())
+	play := tea.NewProgram(*main, tea.WithAltScreen())
 	if _, err := play.Run(); err != nil {
 		log.Fatal(err)
 	}
