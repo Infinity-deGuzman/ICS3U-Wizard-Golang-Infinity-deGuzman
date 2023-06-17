@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -25,13 +25,14 @@ type model struct {
 	questions 	[]Question
 	width 		int
 	height 		int
-	answerField textinput.Model
 	styles 		*Styles
+	done 		bool
 }
 
 type Question struct {
 	question string
 	answer   string
+	input	 Input
 }
 
 func NewQuestion(question string) Question {
@@ -40,87 +41,103 @@ func NewQuestion(question string) Question {
 	}
 }
 
+func newShortQuestion(question string) Question {
+	question2 := NewQuestion(question)
+	field := NewShortAnswerField()
+	question2.input = field
+	return question2
+}
+
+func newLongQuestion(question string) Question {
+	question2 := NewQuestion(question)
+	field := NewLongAnswerField()
+	question2.input = field
+	return question2
+}
+
 func New(questions []Question) *model {
 	styles := DefaultStyles()
-	answerField := textinput.New()
-	answerField.Placeholder = "type your answer here"
-	answerField.Focus()
 	return &model{
 		questions: 		questions,
-		answerField: 	answerField,
 		styles: 		styles,
 	}
 }
 
-func (mod model) Init() tea.Cmd {
+func (main model) Init() tea.Cmd {
 	return nil
 }
 
-func (mod model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (main model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	current := &mod.questions[mod.index]
+	current := &main.questions[main.index]
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		mod.width = msg.Width
-		mod.height = msg.Height
+		main.width = msg.Width
+		main.height = msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return mod, tea.Quit
+			return main, tea.Quit
 		case "enter":
-			current.answer = mod.answerField.Value()
-			mod.answerField.SetValue("")
-			log.Printf("question: %s, answer: %s",
-				current.question,
-				current.answer,
-			)
-			mod.Next()
-			return mod, nil
+			if main.index == len(main.questions)-1 {
+				main.done = true
+			}
+			current.answer = current.input.Value()
+			main.Next()
+			return main, current.input.Blur
 		}
 	}
-	mod.answerField, cmd = mod.answerField.Update(msg)
-	return mod, cmd
+	current.input, cmd = current.input.Update(msg)
+	return main, cmd
 }
 
-func (mod model) View() string {
-	if mod.width == 0 {
+func (main model) View() string {
+	current := main.questions[main.index]
+	if main.done {
+		var output string
+		for _, question := range main.questions {
+			output += fmt.Sprintf("%s: %s\n", question.question, question.answer)
+		}
+		return output
+	}
+	if main.width == 0 {
 		return "loading..."
 	}
 	return lipgloss.Place(
-		mod.width,
-		mod.height,
+		main.width,
+		main.height,
 		lipgloss.Center,
 		lipgloss.Center,
 		lipgloss.JoinVertical(
 			lipgloss.Center,
-			mod.questions[mod.index].question,
-			mod.styles.InputField.Render(mod.answerField.View()),
+			main.questions[main.index].question,
+			main.styles.InputField.Render(current.input.View()),
 		),
 	)
 }
 
-func (mod *model) Next() {
-	if mod.index < len(mod.questions)-1 {
-		mod.index++
+func (main *model) Next() {
+	if main.index < len(main.questions)-1 {
+		main.index++
 	} else {
-		mod.index = 0
+		main.index = 0
 	}
 }
 
 func main() {
 	questions := []Question{
-		NewQuestion("what is your name?"),
-		NewQuestion("what is your favourite editor?"),
-		NewQuestion("what is your favourite quote?"),
+		newShortQuestion("what is your name?"),
+		newShortQuestion("what is your favourite editor?"),
+		newLongQuestion("what is your favourite quote?"),
 	}
-	m := New(questions)
+	main := New(questions)
 
 	fail, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
 		log.Fatalf("err: %w", err)
 	}
 	defer fail.Close()
-	play := tea.NewProgram(m, tea.WithAltScreen())
+	play := tea.NewProgram(main, tea.WithAltScreen())
 	if _, err := play.Run(); err != nil {
 		log.Fatal(err)
 	}
