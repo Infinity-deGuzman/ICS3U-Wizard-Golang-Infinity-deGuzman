@@ -11,7 +11,7 @@ import (
 
 type status int
 
-const divisor = 4
+const divisor = 3
 
 const (
 	todo status = iota
@@ -38,7 +38,23 @@ type Task struct {
 	status			status
 	title			string
 	description		string
-}  
+}
+
+func (task *Task) Next() {
+	if task.status == done {
+		task.status = todo
+	} else {
+		task.status++
+	}
+}
+
+/*func (task *Task) Prev() {
+	if task.status == todo {
+		task.status = done
+	} else {
+		task.status--
+	}
+}*/
 
 // implement the list.Item interface
 func (task Task) FilterValue() string {
@@ -65,6 +81,15 @@ type Model struct {
 
 func New() *Model {
 	return &Model{}
+}
+
+func (mod *Model) MoveToNext() tea.Msg {
+	selectedItem := mod.lists[mod.focused].SelectedItem()
+	selectedTask := selectedItem.(Task)
+	mod.lists[selectedTask.status].RemoveItem(mod.lists[mod.focused].Index())
+	selectedTask.Next()
+	mod.lists[selectedTask.status].InsertItem(len(mod.lists[selectedTask.status].Items())-1, list.Item(selectedTask))
+	return nil
 }
 
 // TODO: Go to next list
@@ -140,6 +165,8 @@ func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				mod.Prev()
 			case "right", "l":
 				mod.Next()
+			case "enter":
+				return mod, mod.MoveToNext
 		}
 	}
 	var cmd tea.Cmd
