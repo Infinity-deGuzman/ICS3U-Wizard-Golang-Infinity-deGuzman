@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +19,14 @@ const (
 	todo status = iota
 	inProgress
 	done
+)
+
+/* MODEL MANAGEENT */
+var models []tea.Model
+
+const (
+	model status = iota
+	form
 )
 
 /* STYLES */
@@ -40,33 +50,37 @@ type Task struct {
 	description		string
 }
 
-func (task *Task) Next() {
-	if task.status == done {
-		task.status = todo
+func NewTask(status status, title, description string) Task {
+	return Task{status: status, title: title, description: description}
+}
+
+func (ta *Task) Next() {
+	if ta.status == done {
+		ta.status = todo
 	} else {
-		task.status++
+		ta.status++
 	}
 }
 
-/*func (task *Task) Prev() {
-	if task.status == todo {
-		task.status = done
+/*func (ta *Task) Prev() {
+	if ta.status == todo {
+		ta.status = done
 	} else {
-		task.status--
+		ta.status--
 	}
 }*/
 
 // implement the list.Item interface
-func (task Task) FilterValue() string {
-	return task.title
+func (ta Task) FilterValue() string {
+	return ta.title
 }
 
-func (task Task) Title() string {
-	return task.title
+func (ta Task) Title() string {
+	return ta.title
 }
 
-func (task Task) Description() string {
-	return task.description
+func (ta Task) Description() string {
+	return ta.description
 }
 
 /* MAIN MODEL */
@@ -158,16 +172,27 @@ func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyMsg:
 		switch msg.String() {
-			case "ctrl+c", "q":
-				mod.quitting = true
-				return mod, tea.Quit
-			case "left", "h":
-				mod.Prev()
-			case "right", "l":
-				mod.Next()
-			case "enter":
-				return mod, mod.MoveToNext
+		case "ctrl+c":
+			mod.quitting = true
+			return mod, tea.Quit
+		case "left", "h":
+			mod.Prev()
+		case "right", "l":
+			mod.Next()
+		case "enter":
+			return mod, mod.MoveToNext
+		case "n":
+			models[model] = mod // save the current model
+			models[form] = NewForm(mod.focused)
+			return models[form].Update(nil)
 		}
+		case Task:
+			task := msg
+			return mod, mod.lists[task.status].
+			InsertItem(
+				len(mod.lists[task.status].Items()),
+				task,
+			)
 	}
 	var cmd tea.Cmd
 	mod.lists[mod.focused], cmd = mod.lists[mod.focused].Update(msg)
@@ -210,8 +235,72 @@ func (mod Model) View() string {
 	}
 }
 
+/* FORM MODEL */
+type Form struct {
+	focused 	status
+	title 		textinput.Model
+	description textarea.Model
+}
+
+func NewForm(focused status) *Form {
+	form := &Form{focused: focused}
+	form.title = textinput.New()
+	form.title.Focus()
+	form.description = textarea.New()
+	return form
+}
+
+func (mod Form) CreateTask() tea.Msg {
+	// TODO: create a new task
+	return NewTask(
+		mod.focused,
+		mod.title.Value(),
+		mod.description.Value(),
+	)
+}
+
+func (mod Form) Init() tea.Cmd {
+	return nil
+}
+
+func (mod Form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return mod, tea.Quit
+		case "enter":
+			if mod.title.Focused() {
+				mod.title.Blur()
+				mod.description.Focus()
+				return mod, textarea.Blink
+			} else {
+				models[form] = mod
+				return models[model], mod.CreateTask
+			}
+		}
+	}
+	if mod.title.Focused() {
+		mod.title, cmd = mod.title.Update(msg)
+		return mod, cmd
+	} else {
+		mod.description, cmd = mod.description.Update(msg)
+		return mod, cmd
+	}
+}
+
+func (mod Form) View() string {
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		mod.title.View(),
+		mod.description.View(),
+	)
+}
+
 func main() {
-	mod := New()
+	models = []tea.Model{New(), NewForm(todo)}
+	mod := models[model]
 	prog := tea.NewProgram(mod)
 	if err := prog.Start(); err != nil {
 		fmt.Println(err)
