@@ -6,9 +6,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type status int
+
+const divisor = 4
 
 const (
 	todo status = iota
@@ -40,8 +43,10 @@ func (task Task) Description() string {
 /* MAIN MODEL */
 
 type Model struct {
-	list list.Model
-	err error
+	loaded 		bool
+	focused 	status
+	lists 		[]list.Model
+	err 		error
 }
 
 func New() *Model {
@@ -49,13 +54,32 @@ func New() *Model {
 }
 
 // TODO: call this on tea.WindowSizeMsg
-func (mod *Model) initList(width, height int) {
-	mod.list = list.New([]list.Item{}, list.NewDefaultDelegate(), width, height)
-	mod.list.Title = "To Do"
-	mod.list.SetItems([]list.Item{
+func (mod *Model) initLists(width, height int) {
+	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height)
+	defaultList.SetShowHelp(false)
+	mod.lists = []list.Model{defaultList, defaultList, defaultList}
+
+	// Init To Do
+	mod.lists[todo].Title = "To Do"
+	mod.lists[todo].Title = "To Do"
+	mod.lists[todo].SetItems([]list.Item{
 		Task{status: todo, title: "buy milk", description: "strawberry milk"},
 		Task{status: todo, title: "eat sushi", description: "negitoro roll, miso soup, and rice"},
 		Task{status: todo, title: "fold laundry", description: "or wear wrinkly clothes :)"},
+	})
+
+	// Init in progress
+	mod.lists[inProgress].Title = "In Progress"
+	mod.lists[inProgress].Title = "To Do"
+	mod.lists[inProgress].SetItems([]list.Item{
+		Task{status: todo, title: "write code", description: "don't worry, it's Go"},
+	})
+
+	// Init done
+	mod.lists[done].Title = "Done"
+	mod.lists[done].Title = "To Do"
+	mod.lists[done].SetItems([]list.Item{
+		Task{status: todo, title: "stay cool", description: "as a cucumber"},
 	})
 }
 
@@ -66,15 +90,27 @@ func (mod Model) Init() tea.Cmd {
 func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		mod.initList(msg.Width, msg.Height)
+		if !mod.loaded {
+			mod.initLists(msg.Width, msg.Height)
+			mod.loaded = true
+		}
 	}
 	var cmd tea.Cmd
-	mod.list, cmd = mod.list.Update(msg)
+	mod.lists[mod.focused], cmd = mod.lists[mod.focused].Update(msg)
 	return mod, cmd
 }
 
 func (mod Model) View() string {
-	return mod.list.View()
+	if mod.loaded {
+		return lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			mod.lists[todo].View(),
+			mod.lists[inProgress].View(),
+			mod.lists[done].View(),
+		)
+	}else{
+		return "loading..."
+	}
 }
 
 func main() {
