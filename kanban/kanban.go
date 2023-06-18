@@ -19,6 +19,19 @@ const (
 	done
 )
 
+/* STYLES */
+var (
+	columnStyle = lipgloss.NewStyle().
+		Padding(1, 2).
+		Border(lipgloss.HiddenBorder())
+	focusedStyle = lipgloss.NewStyle().
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62"))
+	helpStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#241"))
+)
+
 /* CUSTOM ITEM */
 
 type Task struct {
@@ -47,15 +60,35 @@ type Model struct {
 	focused 	status
 	lists 		[]list.Model
 	err 		error
+	quitting 	bool
 }
 
 func New() *Model {
 	return &Model{}
 }
 
+// TODO: Go to next list
+func (mod *Model) Next() {
+	if mod.focused == done {
+		mod.focused = todo
+	} else {
+		mod.focused++
+	}
+} 
+
+// TODO: Go to prev list
+
+func (mod *Model) Prev() {
+	if mod.focused == todo {
+		mod.focused = done
+	} else {
+		mod.focused--
+	}
+} 
+
 // TODO: call this on tea.WindowSizeMsg
 func (mod *Model) initLists(width, height int) {
-	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height)
+	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height/2)
 	defaultList.SetShowHelp(false)
 	mod.lists = []list.Model{defaultList, defaultList, defaultList}
 
@@ -91,8 +124,22 @@ func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		if !mod.loaded {
+			columnStyle.Width(msg.Width / divisor)
+			focusedStyle.Width(msg.Width / divisor)
+			columnStyle.Height(msg.Height - divisor)
+			focusedStyle.Height(msg.Height - divisor)
 			mod.initLists(msg.Width, msg.Height)
 			mod.loaded = true
+		}
+	case tea.KeyMsg:
+		switch msg.String() {
+			case "ctrl+c", "q":
+				mod.quitting = true
+				return mod, tea.Quit
+			case "left", "h":
+				mod.Prev()
+			case "right", "l":
+				mod.Next()
 		}
 	}
 	var cmd tea.Cmd
@@ -101,14 +148,37 @@ func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (mod Model) View() string {
+	if mod.quitting {
+		return ""
+	}
 	if mod.loaded {
-		return lipgloss.JoinHorizontal(
-			lipgloss.Left,
-			mod.lists[todo].View(),
-			mod.lists[inProgress].View(),
-			mod.lists[done].View(),
-		)
-	}else{
+		todoView := mod.lists[todo].View()
+		inProgView := mod.lists[inProgress].View()
+		doneView := mod.lists[done].View()
+		switch mod.focused {
+		case inProgress:
+			return lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				columnStyle.Render(todoView),
+				focusedStyle.Render(inProgView),
+				columnStyle.Render(doneView),
+			)
+		case done:
+			return lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				columnStyle.Render(todoView),
+				columnStyle.Render(inProgView),
+				focusedStyle.Render(doneView),
+			)
+		default:
+			return lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				focusedStyle.Render(todoView),
+				columnStyle.Render(inProgView),
+				columnStyle.Render(doneView),
+			)
+		}
+	} else {
 		return "loading..."
 	}
 }
