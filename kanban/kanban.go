@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"log"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -21,11 +20,16 @@ const (
 	done
 )
 
-/* MODEL MANAGEENT */
+/* MODEL MANAGEMENT */
 var models []tea.Model
 
+// edit constant
 const (
-	model status = iota
+	noEdit = -1
+)
+
+const (
+	board status = iota
 	form
 )
 
@@ -38,8 +42,6 @@ var (
 		Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62"))
-	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#241"))
 )
 
 /* CUSTOM ITEM */
@@ -51,7 +53,11 @@ type Task struct {
 }
 
 func NewTask(status status, title, description string) Task {
-	return Task{status: status, title: title, description: description}
+	return Task{
+		status: status,
+		title: title,
+		description: description,
+	}
 }
 
 func (ta *Task) Next() {
@@ -86,23 +92,34 @@ func (ta Task) Description() string {
 /* MAIN MODEL */
 
 type Model struct {
-	loaded 		bool
-	focused 	status
-	lists 		[]list.Model
-	err 		error
-	quitting 	bool
+	loaded 		 bool
+	focused 	 status
+	lists 		 []list.Model
+	quitting 	 bool
+	editingIndex int
 }
 
 func New() *Model {
-	return &Model{}
+	return &Model{editingIndex: noEdit}
 }
 
 func (mod *Model) MoveToNext() tea.Msg {
 	selectedItem := mod.lists[mod.focused].SelectedItem()
+	if selectedItem == nil { // will happen if empty list
+		return nil
+	}
 	selectedTask := selectedItem.(Task)
 	mod.lists[selectedTask.status].RemoveItem(mod.lists[mod.focused].Index())
 	selectedTask.Next()
 	mod.lists[selectedTask.status].InsertItem(len(mod.lists[selectedTask.status].Items())-1, list.Item(selectedTask))
+	return nil
+}
+
+func (mod *Model) DeleteCurrent() tea.Msg {
+	if len(mod.lists[mod.focused].VisibleItems()) > 0 {
+		selectedTask := mod.lists[mod.focused].SelectedItem().(Task)
+		mod.lists[selectedTask.status].RemoveItem(mod.lists[mod.focused].Index())
+	}
 	return nil
 }
 
@@ -126,13 +143,12 @@ func (mod *Model) Prev() {
 } 
 
 // TODO: call this on tea.WindowSizeMsg
-func (mod *Model) initLists(width, height int) {
-	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height/2)
+func (mod *Model) initLists() {
+	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	defaultList.SetShowHelp(false)
 	mod.lists = []list.Model{defaultList, defaultList, defaultList}
 
 	// Init To Do
-	mod.lists[todo].Title = "To Do"
 	mod.lists[todo].Title = "To Do"
 	mod.lists[todo].SetItems([]list.Item{
 		Task{status: todo, title: "buy milk", description: "strawberry milk"},
@@ -142,14 +158,12 @@ func (mod *Model) initLists(width, height int) {
 
 	// Init in progress
 	mod.lists[inProgress].Title = "In Progress"
-	mod.lists[inProgress].Title = "To Do"
 	mod.lists[inProgress].SetItems([]list.Item{
 		Task{status: todo, title: "write code", description: "don't worry, it's Go"},
 	})
 
 	// Init done
 	mod.lists[done].Title = "Done"
-	mod.lists[done].Title = "To Do"
 	mod.lists[done].SetItems([]list.Item{
 		Task{status: todo, title: "stay cool", description: "as a cucumber"},
 	})
@@ -162,14 +176,15 @@ func (mod Model) Init() tea.Cmd {
 func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		if !mod.loaded {
-			columnStyle.Width(msg.Width / divisor)
-			focusedStyle.Width(msg.Width / divisor)
-			columnStyle.Height(msg.Height - divisor)
-			focusedStyle.Height(msg.Height - divisor)
-			mod.initLists(msg.Width, msg.Height)
-			mod.loaded = true
+		columnStyle.Width(msg.Width / divisor)
+		focusedStyle.Width(msg.Width / divisor)
+		columnStyle.Height(msg.Height - divisor)
+		focusedStyle.Height(msg.Height - divisor)
+		for size, list := range mod.lists {
+			list.SetSize(msg.Width/divisor, msg.Height/2)
+			mod.lists[size], _ = list.Update(msg)
 		}
+		mod.loaded = true
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -182,17 +197,38 @@ func (mod Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return mod, mod.MoveToNext
 		case "n":
-			models[model] = mod // save the current model
+			models[board] = mod // save the current model
 			models[form] = NewForm(mod.focused)
 			return models[form].Update(nil)
+		case "e":
+			list := mod.lists[mod.focused]
+			if len(list.VisibleItems()) == 0 {
+				return mod, nil
+			}
+			task := list.SelectedItem().(Task)
+			editForm := NewForm(mod.focused)
+			editForm.title.SetValue(task.title)
+			editForm.description.SetValue(task.description)
+			mod.editingIndex = list.Index()
+			models[board] = mod // save the state of the current model
+			models[form] = editForm
+			return models[form].Update(nil)
+		case "d":
+			return mod, mod.DeleteCurrent
 		}
 		case Task:
 			task := msg
-			return mod, mod.lists[task.status].
-			InsertItem(
-				len(mod.lists[task.status].Items()),
-				task,
-			)
+			list := &mod.lists[task.status]
+
+			// if edit, replace existing task in list
+			if mod.editingIndex != noEdit {
+				index := mod.editingIndex
+				mod.editingIndex = noEdit
+				return mod, list.SetItem(index, task)
+			}
+
+			// add task to end of list
+			return mod, list.InsertItem(len(list.Items()), task)
 	}
 	var cmd tea.Cmd
 	mod.lists[mod.focused], cmd = mod.lists[mod.focused].Update(msg)
@@ -243,11 +279,14 @@ type Form struct {
 }
 
 func NewForm(focused status) *Form {
-	form := &Form{focused: focused}
-	form.title = textinput.New()
+	form := Form{
+		focused: 	focused,
+		title:		textinput.New(),
+		description: textarea.New(),
+	}
 	form.title.Focus()
 	form.description = textarea.New()
-	return form
+	return &form
 }
 
 func (mod Form) CreateTask() tea.Msg {
@@ -277,7 +316,7 @@ func (mod Form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return mod, textarea.Blink
 			} else {
 				models[form] = mod
-				return models[model], mod.CreateTask
+				return models[board], mod.CreateTask
 			}
 		}
 	}
@@ -299,11 +338,12 @@ func (mod Form) View() string {
 }
 
 func main() {
-	models = []tea.Model{New(), NewForm(todo)}
-	mod := models[model]
+	boardView := Model{}
+	boardView.initLists()
+	models = []tea.Model{&boardView, NewForm(todo)}
+	mod := models[board]
 	prog := tea.NewProgram(mod)
 	if err := prog.Start(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }
